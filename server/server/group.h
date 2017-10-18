@@ -1,54 +1,24 @@
 #pragma once
 #include <string>
 #include <unordered_map>
-#include <set>
-#include <algorithm>
+#include <process.h>
+#include <Windows.h>
+#include "file.h"
 using namespace std;
 
-/*class user {
-public:
-	user() = default;
-	user(string a, string b) :userId(a), groupId(b) {};
-	string getUserId() {
-		return userId;
-	}
-	string getGroupId() {
-		return groupId;
-	}
-private:
-	string userId;
-	string groupId;
-};*/
-
-class file {
-public:
-	file() = default;
-	file(string a,string b) :fileId(a),content(b) {};
-	string getfileId() {
-		return fileId;
-	}
-	
-	string getcontent() {
-		return content;
-	}
-
-	void setfileId(string a) {
-		fileId = a;
-	}
-
-	void setcontent(string a) {
-		content = a;
-	}
-
-private:
-	string fileId;
-	string content;
-};
 
 class group {
 public:
-	group() = default;
-	group(string a) :groupId(a) {};
+	
+	group(string a) :groupId(a),read_num(0) {
+		InitializeCriticalSection(&cs);
+		event1 = CreateEvent(NULL, TRUE, TRUE, NULL);
+		event2 = CreateEvent(NULL, TRUE, TRUE, NULL);
+	};
+	~group() {
+		CloseHandle(event1);
+		CloseHandle(event2);
+	}
 	const string& getgroupId() {
 		return groupId;
 	}
@@ -68,10 +38,6 @@ public:
 			users[userId] = s;
 	}
 
-	vector<file> &getfile() {
-		return fileFolder;
-	}
-
 	const unordered_map<string, int> &getusers() const{
 		return users;
 	}
@@ -83,10 +49,34 @@ public:
 		return 0;
 	}
 
+	unordered_map<string,file> &getfile() {
+		return fileFolder;
+	}
+
+	HANDLE &getevent1() {
+		return event1;
+	}
+
+	HANDLE &getevent2() {
+		return event2;
+	}
+
+	CRITICAL_SECTION &getcs() {
+		return cs;
+	}
+
+	int &getrdn() {
+		return read_num;
+	}
+
 private:
 	string groupId;
 	unordered_map<string, int> users;             //保存userId及连接后的socket，若无连接，则该值为-1
-	vector<file> fileFolder;
+	unordered_map<string,file> fileFolder;
+	HANDLE event1;
+	HANDLE event2;
+	CRITICAL_SECTION cs;
+	int read_num;
 };
 
 class userManager {
@@ -101,7 +91,6 @@ public:
 			auto n=gs.emplace(user.second, user.second);
 			return (n.first->second.adduser(user.first));
 		}
-		
 	}
 
 	group* getgroup(string groupId){
@@ -119,10 +108,6 @@ public:
 		return 0;
 	}
 
-	vector<file> &getfile(string groupId)  {
-		
-		return (getgroup(groupId)->getfile());
-	}
 	
 private:
 	unordered_map<string,group> gs;
