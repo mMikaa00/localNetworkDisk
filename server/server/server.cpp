@@ -134,16 +134,16 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 	cout << "client " << curuser.first << ' ' << curuser.second <<" connected!" << endl;
 
 	group* curgroup = sUsers.getgroup(curuser.second);							//将group中该user配对值设为socket值，标识该用户已连接，并获取group中的两个事件，关键段和文件引用
-	curgroup->setsocket(curuser.first, accept);
+	LeaveCriticalSection(&cs);
+
+	CRITICAL_SECTION &groupcs = curgroup->getcs();								//从group中获取需要的资源
+	curgroup->setsocket(curuser.first, accept);							
 	HANDLE &event1 = curgroup->getevent1();
 	HANDLE &event2 = curgroup->getevent2();
-	CRITICAL_SECTION &groupcs = curgroup->getcs();
-	unordered_map<string,file> &filefolder = curgroup->getfile();
 	int &read_num = curgroup->getrdn();
+	unordered_map<string,file> &filefolder = curgroup->getfile();
 
-	LeaveCriticalSection(&cs);
-	
-	char recvbuf[MAX_BUFF];
+	char recvbuf[100];
 	while (1) {
 		if(!recvData(accept, recvbuf))
 			break;
@@ -178,6 +178,7 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 					continue;
 				sendData(k.second, "SYN");
 			}
+
 
 			SetEvent(event1);
 			SetEvent(event2);
@@ -275,7 +276,8 @@ void commitData(SOCKET &s, pair<string, string> &user, unordered_map<string,file
 		file temp=recvfile(s);
 		filefolder[temp.getfileId()] = temp;
 	}
-	
+
+	Sleep(5000);//tttttttttttttttt
 	sendData(s, "end",100);
 	cout << user.first << " complete commiting!" << endl;
 }

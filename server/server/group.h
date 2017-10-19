@@ -70,13 +70,14 @@ public:
 	}
 
 private:
-	string groupId;
-	unordered_map<string, int> users;             //保存userId及连接后的socket，若无连接，则该值为-1
-	unordered_map<string,file> fileFolder;
 	HANDLE event1;
 	HANDLE event2;
 	CRITICAL_SECTION cs;
 	int read_num;
+	string groupId;
+	unordered_map<string, int> users;             //保存userId及连接后的socket，若无连接，则该值为-1
+	unordered_map<string,file> fileFolder;
+	
 };
 
 class userManager {
