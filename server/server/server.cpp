@@ -111,7 +111,7 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 		return 0;
 	}
 	EnterCriticalSection(&cs);
-	if (!sUsers.finduser(curuser)) {					//检查数据库中是否已存在该用户，若不存在则添加该用户(待封装）
+	if (!sUsers.finduser(curuser)) {					//检查数据库中是否已存在该用户，若不存在则添加该用户
 		if (!sUsers.adduser(curuser))
 		{
 			cout << "add user failed!" << endl;
@@ -122,9 +122,6 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 		else
 			cout << "add new user to database" << endl;
 	}
-	
-
-	
 	
 	if (sUsers.getgroup(curuser.second)->finduser(curuser.first) != -1)				//检查该用户是否已连接
 	{
@@ -151,34 +148,49 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 		if(!recvData(accept, recvbuf))
 			break;
 		if (!strcmp(recvbuf, "SYN")) {								//实现同步与提交两种操作的响应，同步响应只读取数据，提交响应会修改数据，同步相应开始时，可以允许其他线程读取数据但不允许修改操作
-			WaitForSingleObject(event1, INFINITE);					//
-			ResetEvent(event2);
 			EnterCriticalSection(&groupcs);
 			++read_num;
+			curgroup->setsocket(curuser.first, 0);					//该用户即将同步数据，其socket不能被其他线程访问
 			LeaveCriticalSection(&groupcs);
+
+			WaitForSingleObject(event1, INFINITE);					//
+			ResetEvent(event2);
 			synchronizeData(accept, curuser,filefolder);
+
 			EnterCriticalSection(&groupcs);
 			if (--read_num==0)
 				SetEvent(event2);
+			curgroup->setsocket(curuser.first, accept);				//用户同步数据完成，其socket可以被其他线程访问
 			LeaveCriticalSection(&groupcs);	
 		}
 		else if (!strcmp(recvbuf, "CMT")) {
+			EnterCriticalSection(&groupcs);
+			curgroup->setsocket(curuser.first, 0);
+			LeaveCriticalSection(&groupcs);
+
 			ResetEvent(event1);									//一旦提交相应开始进行时，将数据进行锁定，不允许其他线程修改或读取
 			WaitForSingleObject(event2, INFINITE);
 			ResetEvent(event2);
 			commitData(accept,curuser,filefolder);
+			
 			for (auto &k : curgroup->getusers()) {				//提交成功后通知该组其他已连接用户同步数据
-				if (k.second==-1||k.first == curuser.first)
+				if (k.second<=1)
 					continue;
 				sendData(k.second, "SYN");
 			}
+
 			SetEvent(event1);
 			SetEvent(event2);
+
+			EnterCriticalSection(&groupcs);
+			curgroup->setsocket(curuser.first, accept);
+			LeaveCriticalSection(&groupcs);
 		}
 	}
 	
 
 	cout << "client " << curuser.first << " disconnected!" << endl;
+
 	curgroup->setsocket(curuser.first, -1);
 
 	exitThread((SOCKET*)pParam);

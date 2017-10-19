@@ -38,11 +38,7 @@ void InitMember(void)
 		64
 	);
 
-	if (*port >= 8900||*port<=8888)
-		*port = 8889;
-	else
-		*port += 1;
-	cout << "port=" << *port << endl;//tttttttttttttt
+	
 }
 
 /**
@@ -110,6 +106,11 @@ BOOL ConnectServer(void)
 * 初始化输入线程并连接
 */
 bool InitStdinThread() {
+	if (*port >= 8900 || *port <= 8888)
+		*port = 8889;
+	else
+		*port += 1;
+	cout << "port=" << *port << endl;//tttttttttttttt
 	DWORD dwThreadId;
 	HANDLE hThread;
 	DWORD dwWaitResult;
@@ -143,8 +144,6 @@ bool InitStdinThread() {
 
 DWORD WINAPI ThreadFunc(LPVOID lpParam)
 {
-	//WSADATA wsaData;
-	//WSAStartup(MAKEWORD(2, 2), &wsaData);
 	char buf[100];
 	SOCKET listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	sockaddr_in servaddr;
@@ -157,10 +156,12 @@ DWORD WINAPI ThreadFunc(LPVOID lpParam)
 	
 	HANDLE hSemaphore = OpenSemaphore(SEMAPHORE_ALL_ACCESS, TRUE, L"liuwenbo");
 	ReleaseSemaphore(hSemaphore, 1, NULL);
-
 	SOCKET connfd = accept(listenfd, NULL, NULL);
-	if (connfd != -1)
-		cout << "stdin connected!" << endl;
+		if (connfd != -1) {
+			cout << "stdin connected!" << endl;
+		}
+		else
+			cout << "stdin connect error!" << endl;
 
 	while (1) {
 		cin >> buf;
@@ -174,8 +175,6 @@ DWORD WINAPI ThreadFunc(LPVOID lpParam)
 */
 void ExitClient(void)
 {
-	//  DeleteCriticalSection(&cs);  
-	//  CloseHandle(handleThread);  
 	closesocket(sClient);
 	WSACleanup();
 }

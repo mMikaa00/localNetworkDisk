@@ -84,19 +84,19 @@ public:
 	bool adduser(pair<string,string> user) {
 		auto g = gs.find(user.second);
 		if (g != gs.end()) {
-			return g->second.adduser(user.first);
+			return g->second->adduser(user.first);
 		}
 		else
 		{
-			auto n=gs.emplace(user.second, user.second);
-			return (n.first->second.adduser(user.first));
+			auto n=gs.emplace(user.second, new group(user.second));
+			return (n.first->second->adduser(user.first));
 		}
 	}
 
 	group* getgroup(string groupId){
 		auto g = gs.find(groupId);
 		if (g != gs.end()) 
-			return &g->second;
+			return g->second;
 		else
 			return nullptr;
 	}
@@ -108,9 +108,19 @@ public:
 		return 0;
 	}
 
+	unordered_map<string,group*>::iterator erasegroup(string groupid) {
+		auto g = gs.find(groupid);
+		if (g != gs.end()) {
+			delete g->second;
+			return gs.erase(g);
+		}
+		else
+			return g;
+	}
+
 	
 private:
-	unordered_map<string,group> gs;
+	unordered_map<string,group*> gs;
 };
 
 
