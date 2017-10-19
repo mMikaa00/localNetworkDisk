@@ -145,6 +145,7 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 
 	char recvbuf[100];
 	while (1) {
+		memset(recvbuf, 0, 100);
 		if(!recvData(accept, recvbuf))
 			break;
 		if (!strcmp(recvbuf, "SYN")) {								//实现同步与提交两种操作的响应，同步响应只读取数据，提交响应会修改数据，同步相应开始时，可以允许其他线程读取数据但不允许修改操作
@@ -168,17 +169,20 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 			curgroup->setsocket(curuser.first, 0);
 			LeaveCriticalSection(&groupcs);
 
-			ResetEvent(event1);									//一旦提交相应开始进行时，将数据进行锁定，不允许其他线程修改或读取
-			WaitForSingleObject(event2, INFINITE);
-			ResetEvent(event2);
-			commitData(accept,curuser,filefolder);
 			
+			WaitForSingleObject(event2, INFINITE);
+			ResetEvent(event1);									//一旦提交相应开始进行时，将数据进行锁定，不允许其他线程修改或读取
+			ResetEvent(event2);
+
+			commitData(accept,curuser,filefolder);
+			synchronizeData(accept, curuser, filefolder);
+
 			for (auto &k : curgroup->getusers()) {				//提交成功后通知该组其他已连接用户同步数据
 				if (k.second<=1)
 					continue;
 				sendData(k.second, "SYN");
 			}
-
+			
 
 			SetEvent(event1);
 			SetEvent(event2);
@@ -249,7 +253,6 @@ void synchronizeData(SOCKET &s,pair<string,string> &user, unordered_map<string,f
 
 void commitData(SOCKET &s, pair<string, string> &user, unordered_map<string,file> &filefolder) {
 	cout << user.first << " is commiting!" << endl;
-
 	unordered_map<string, int> checkcode;						//接受远端校验信息存入字典
 	while (1){
 		auto temp=recvcheckcode(s);
@@ -261,12 +264,13 @@ void commitData(SOCKET &s, pair<string, string> &user, unordered_map<string,file
 
 	for (auto i=filefolder.begin();i!=filefolder.end();) {			//根据check字典检查本地数据是否需要删除或更新，将需要更新的file校验信息发送给远端
 		auto curcode = checkcode.find(i->first);
-		if (curcode == checkcode.end())
+		if (curcode == checkcode.end()) {
 			i = filefolder.erase(i);
-		else if (i->second.getversion() == curcode->second) {
-			checkcode.erase(curcode);
-			++i;
+			continue;
 		}
+		else if (i->second.getversion() >= curcode->second) 
+			checkcode.erase(curcode);
+		++i;
 	}
 
 	for (auto &k : checkcode) {									//根据字典中剩余的文件名向远端申请文件数据
@@ -277,7 +281,6 @@ void commitData(SOCKET &s, pair<string, string> &user, unordered_map<string,file
 		filefolder[temp.getfileId()] = temp;
 	}
 
-	Sleep(5000);//tttttttttttttttt
 	sendData(s, "end",100);
 	cout << user.first << " complete commiting!" << endl;
 }

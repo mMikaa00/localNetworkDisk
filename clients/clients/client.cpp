@@ -69,7 +69,7 @@ BOOL ConnectServer(void)
 						//输入要连接的主机地址  
 	serAddr.sin_family = AF_INET;
 	serAddr.sin_port = htons(8888);
-	serAddr.sin_addr.S_un.S_addr = inet_addr("172.18.103.161");
+	serAddr.sin_addr.S_un.S_addr = inet_addr("192.168.206.56");//"172.18.103.161");
 
 	while (true)
 	{
@@ -135,7 +135,7 @@ bool InitStdinThread() {
 	sockaddr_in stdserv;
 	stdserv.sin_family = AF_INET;
 	stdserv.sin_port = htons(*port);
-	stdserv.sin_addr.s_addr = inet_addr("172.18.103.161");
+	stdserv.sin_addr.s_addr = inet_addr("192.168.206.56");//"172.18.103.161");
 
 	connect(sStdinfd, (SOCKADDR*)&stdserv, sizeof(stdserv));
 	CloseHandle(hSemaphore);
@@ -149,7 +149,7 @@ DWORD WINAPI ThreadFunc(LPVOID lpParam)
 	sockaddr_in servaddr;
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_port = htons(*port);
-	servaddr.sin_addr.s_addr = inet_addr("172.18.103.161");
+	servaddr.sin_addr.s_addr = inet_addr("192.168.206.56");//"172.18.103.161");
 
 	bind(listenfd, (SOCKADDR*)&servaddr, sizeof(servaddr));
 	listen(listenfd, 5);
@@ -209,20 +209,22 @@ bool sendUserid()
 		return false;
 	return true;
 }
-
+/**
+* 与服务端和用户交互接口
+*/
 void getinfo() {
 	sendData(sClient, "SYN");
 	synchronizeData();
 	int maxfd;
 	fd_set rfd;
 	FD_ZERO(&rfd);
+	char input[50];
 	while (1) {
 		int n;
 		FD_SET(sStdinfd, &rfd);
 		FD_SET(sClient, &rfd);
 		maxfd = max(sStdinfd, sClient) + 1;
-		char input[50];
-
+		memset(input, 0, 50);
 		n=select(maxfd, &rfd, NULL, NULL, NULL);
 		if (FD_ISSET(sStdinfd, &rfd)) {
 			recvData(sStdinfd, input);
@@ -239,10 +241,24 @@ void getinfo() {
 				print();
 			}
 			else if (!strcmp(input, "add")) {
-				recvData(sStdinfd, input);
-				filefolder.emplace(input, file(input, "adsfkjasdflk"));
+				char temp[50];
+				recvData(sStdinfd, temp);
+				filefolder.emplace(temp, file(temp, "adsfkjasdflk"));
 				sendData(sClient, "CMT");
 				commitData();
+				synchronizeData();
+			}
+			else if (!strcmp(input, "edit")) {
+				char temp[50];
+				recvData(sStdinfd, temp);
+				auto g = filefolder.find(temp);
+				if (g != filefolder.end()) {
+					g->second.setversion(16);
+					sendData(sClient, "CMT");
+					Sleep(5000);			//模拟延缓提交
+					commitData();
+					synchronizeData();
+				}
 			}
 		}
 
@@ -269,12 +285,13 @@ void synchronizeData() {
 
 	for (auto i = filefolder.begin(); i != filefolder.end();) {			//根据check字典检查本地数据是否需要删除或更新，将需要更新的file校验信息发送给远端
 		auto curcode = checkcode.find(i->first);
-		if (curcode == checkcode.end())
+		if (curcode == checkcode.end()) {
 			i = filefolder.erase(i);
-		else if (i->second.getversion() == curcode->second) {
-			checkcode.erase(curcode);
-			++i;
+			continue;
 		}
+		else if (i->second.getversion() >= curcode->second) 
+			checkcode.erase(curcode);
+		++i;
 	}
 
 	for (auto &k : checkcode) {									//根据字典中剩余的文件名向远端申请文件数据
@@ -293,7 +310,6 @@ void commitData() {
 	sendcheckcode(sClient, file("end", ""));
 
 	while (1) {														//发送对端请求的文件
-		
 		recvData(sClient, dataBuf,100);
 		if (strcmp(dataBuf, "end"))
 			sendfile(sClient, filefolder[dataBuf]);
