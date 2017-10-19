@@ -2,10 +2,12 @@
 
 
 //变量  
-SOCKET  sClient;                            //套接字  
+SOCKET  sClient,sStdinfd;                            //套接字  
 char dataBuf[MAX_BUFF];                  //数据缓冲区    
 BOOL    bConnecting;                        //与服务器的连接状态  
-			
+unordered_map<string, file> filefolder;//{ {"abc",file("abc","fdf")},{ "qwe",file("qwe","grerer") },{ "zxc",file("zxc","kjlrtoi") }, };					//存储本地文件空间
+HANDLE hMapFile;
+int *port;
 
 /**
 初始化全局变量
@@ -15,15 +17,36 @@ void InitMember(void)
 	//  InitializeCriticalSection(&cs);  
 
 	sClient = INVALID_SOCKET;   //套接字  
-								//  handleThread = NULL;        //接收数据线程句柄  
+	sStdinfd = INVALID_SOCKET;
+
 	bConnecting = FALSE;        //为连接状态  
 
-								//  //初始化数据缓冲区  
-								//  memset(dataBuf, 0, MAX_NUM_BUF);  
+	hMapFile = CreateFileMapping(
+		INVALID_HANDLE_VALUE,    // 物理文件句柄  
+		NULL,                    // 默认安全级别  
+		PAGE_READWRITE,          // 可读可写  
+		0,                       // 高位文件大小  
+		64,                // 地位文件大小  
+		L"portnum"                   // 共享内存名称  
+	);
+
+	port = (int *)MapViewOfFile(
+		hMapFile,            // 共享内存的句柄  
+		FILE_MAP_ALL_ACCESS, // 可读写许可  
+		0,
+		0,
+		64
+	);
+
+	if (*port >= 8900||*port<=8888)
+		*port = 8889;
+	else
+		*port += 1;
+	cout << "port=" << *port << endl;//tttttttttttttt
 }
 
 /**
-* 创建非阻塞套接字
+* 创建套接字
 */
 BOOL  InitSocket(void)
 {
@@ -33,7 +56,8 @@ BOOL  InitSocket(void)
 
 												//创建套接字  
 	sClient = socket(AF_INET, SOCK_STREAM, 0);
-	if (INVALID_SOCKET == sClient)
+	sStdinfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (INVALID_SOCKET == sClient|| INVALID_SOCKET == sStdinfd)
 		return FALSE;
 
 	return TRUE;
@@ -82,79 +106,67 @@ BOOL ConnectServer(void)
 	return TRUE;
 }
 
-
 /**
-*  读取数据
+* 初始化输入线程并连接
 */
-bool recvData(SOCKET s, char* buf)
-{
-	BOOL retVal = TRUE;
-	bool bLineEnd = FALSE;      //行结束  
-	memset(buf, 0, MAX_BUFF);        //清空接收缓冲区  
-	int  nReadLen = 0;          //读入字节数  
-
-	while (!bLineEnd)
+bool InitStdinThread() {
+	DWORD dwThreadId;
+	HANDLE hThread;
+	DWORD dwWaitResult;
+	HANDLE hSemaphore = CreateSemaphore(NULL, 0, 1,L"liuwenbo" );
+	hThread = CreateThread(NULL, 0, ThreadFunc, NULL, 0, &dwThreadId);
+	if (hThread == NULL)
 	{
-		nReadLen = recv(s, buf, MAX_BUFF, 0);
-		if (SOCKET_ERROR == nReadLen)
-		{
-			int nErrCode = WSAGetLastError();
-			if (WSAEWOULDBLOCK == nErrCode)   //接受数据缓冲区不可用  
-			{
-				continue;                       //继续循环  
-			}
-			else if (WSAENETDOWN == nErrCode || WSAETIMEDOUT == nErrCode || WSAECONNRESET == nErrCode) //客户端关闭了连接  
-			{
-				retVal = FALSE; //读数据失败  
-				break;                          //线程退出  
-			}
-		}
-
-		if (0 == nReadLen)           //未读取到数据  
-		{
-			retVal = FALSE;
-			break;
-		}
-		buf[nReadLen] = 0;
-		bLineEnd = TRUE;
+		cout << "CreateThread failed." << endl;
+		return false;
+	}
+	dwWaitResult = WaitForSingleObject(hSemaphore, INFINITE);
+	switch (dwWaitResult)
+	{
+	case WAIT_OBJECT_0:
+		cout<<"stdin-sock is established!" << endl;
+		break;
+	default:
+		cout<<"wait the stdin-sock thread failed!"<<endl;
+		return -1;
 	}
 
+	sockaddr_in stdserv;
+	stdserv.sin_family = AF_INET;
+	stdserv.sin_port = htons(*port);
+	stdserv.sin_addr.s_addr = inet_addr("172.18.103.161");
 
-	return retVal;
+	connect(sStdinfd, (SOCKADDR*)&stdserv, sizeof(stdserv));
+	CloseHandle(hSemaphore);
 }
 
 
-/**
-* @Des:send data
-*/
-bool sendData(SOCKET s, char* str)
+DWORD WINAPI ThreadFunc(LPVOID lpParam)
 {
-	int retVal;//返回值  
-	int nlength = strlen(str);
-	while (1)
-	{
-		retVal = send(s, str, nlength, 0);//一次发送  
-											  //错误处理  
-		if (SOCKET_ERROR == retVal)
-		{
-			int nErrCode = WSAGetLastError();//错误代码  
-			if (WSAEWOULDBLOCK == nErrCode)
-			{
-				continue;
-			}
-			else if (WSAENETDOWN == nErrCode || WSAETIMEDOUT == nErrCode || WSAECONNRESET == nErrCode)
-			{
-				return FALSE;
-			}
-		}
-		nlength -= retVal;
-		str += retVal;
+	//WSADATA wsaData;
+	//WSAStartup(MAKEWORD(2, 2), &wsaData);
+	char buf[100];
+	SOCKET listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	sockaddr_in servaddr;
+	servaddr.sin_family = AF_INET;
+	servaddr.sin_port = htons(*port);
+	servaddr.sin_addr.s_addr = inet_addr("172.18.103.161");
 
-		if(nlength==0)
-			break;
+	bind(listenfd, (SOCKADDR*)&servaddr, sizeof(servaddr));
+	listen(listenfd, 5);
+	
+	HANDLE hSemaphore = OpenSemaphore(SEMAPHORE_ALL_ACCESS, TRUE, L"liuwenbo");
+	ReleaseSemaphore(hSemaphore, 1, NULL);
+
+	SOCKET connfd = accept(listenfd, NULL, NULL);
+	if (connfd != -1)
+		cout << "stdin connected!" << endl;
+
+	while (1) {
+		cin >> buf;
+		send(connfd, buf, strlen(buf) , 0);
 	}
-
-	return TRUE;        //发送成功  
+	return 0;
 }
 
 /**
@@ -182,10 +194,14 @@ void ShowConnectMsg(BOOL bSuc)
 		cout << "* Client has to exit! *" << endl;
 	}
 }
+/**
+* 发送用户信息
+*/
 
-bool sendUserid() {
+bool sendUserid()
+{
 	cout << "please input your userid and groupid:" << endl;
-	char input[MAX_BUFF];
+	char input[100];
 	cin >> input;
 	if (!sendData(sClient, input))
 		return false;
@@ -193,4 +209,142 @@ bool sendUserid() {
 	if (!sendData(sClient, input))
 		return false;
 	return true;
+}
+
+void getinfo() {
+	sendData(sClient, "SYN");
+	synchronizeData();
+	int maxfd;
+	fd_set rfd;
+	FD_ZERO(&rfd);
+	while (1) {
+		int n;
+		FD_SET(sStdinfd, &rfd);
+		FD_SET(sClient, &rfd);
+		maxfd = max(sStdinfd, sClient) + 1;
+		char input[50];
+
+		n=select(maxfd, &rfd, NULL, NULL, NULL);
+		if (FD_ISSET(sStdinfd, &rfd)) {
+			recvData(sStdinfd, input);
+
+			if (!strcmp(input, "SYN")) {
+				sendData(sClient, "SYN");
+				synchronizeData();
+			}
+			else if (!strcmp(input, "CMT")) {
+				sendData(sClient, "CMT");
+				commitData();
+			}
+			else if (!strcmp(input, "print")) {
+				print();
+			}
+			else if (!strcmp(input, "add")) {
+				recvData(sStdinfd, input);
+				filefolder.emplace(input, file(input, "adsfkjasdflk"));
+				sendData(sClient, "CMT");
+				commitData();
+			}
+		}
+
+		if (FD_ISSET(sClient, &rfd)) {
+			recvData(sClient, dataBuf);
+			if (!strcmp(dataBuf, "SYN")) {
+				sendData(sClient, dataBuf);
+				synchronizeData();
+			}
+		}
+	}
+}
+
+void synchronizeData() {
+
+	unordered_map<string, int> checkcode;						//接受远端校验信息存入字典
+	while (1) {
+		auto temp = recvcheckcode(sClient);
+		if (temp.first != "end")
+			checkcode.insert(temp);
+		else
+			break;
+	}
+
+	for (auto i = filefolder.begin(); i != filefolder.end();) {			//根据check字典检查本地数据是否需要删除或更新，将需要更新的file校验信息发送给远端
+		auto curcode = checkcode.find(i->first);
+		if (curcode == checkcode.end())
+			i = filefolder.erase(i);
+		else if (i->second.getversion() == curcode->second) {
+			checkcode.erase(curcode);
+			++i;
+		}
+	}
+
+	for (auto &k : checkcode) {									//根据字典中剩余的文件名向远端申请文件数据
+		char neededfile[100];
+		strcpy(neededfile, k.first.c_str());
+		sendData(sClient, neededfile, 100);
+		file temp = recvfile(sClient);
+		filefolder[temp.getfileId()] = temp;
+	}
+	sendData(sClient, "end",100);
+}
+
+void commitData() {
+	for (auto &k : filefolder) 										//发送本端所有文件校验信息给远端
+		sendcheckcode(sClient, k.second);
+	sendcheckcode(sClient, file("end", ""));
+
+	while (1) {														//发送对端请求的文件
+		
+		recvData(sClient, dataBuf,100);
+		if (strcmp(dataBuf, "end"))
+			sendfile(sClient, filefolder[dataBuf]);
+		else
+			break;
+	}
+}
+
+void sendcheckcode(SOCKET &s, file &f) {
+	strcpy(dataBuf, f.getfileId().c_str());
+	sendData(s, dataBuf, 100);
+	memcpy(dataBuf, &f.getversion(), 4);
+	dataBuf[4] = 0;
+	sendData(s, dataBuf, 4);
+}
+
+pair<string, int> recvcheckcode(SOCKET &s) {
+	pair<string, int> ret;
+	recvData(s, dataBuf, 100);
+	ret.first = dataBuf;
+	recvData(s, dataBuf, 4);
+	ret.second = (*(int*)dataBuf);
+	return ret;
+}
+
+void sendfile(SOCKET &s, file &f) {
+	strcpy(dataBuf, f.getfileId().c_str());
+	sendData(s, dataBuf, 100);
+	strcpy(dataBuf, f.getcontent().c_str());
+	sendData(s, dataBuf, MAX_BUFF);
+	memcpy(dataBuf, &f.getversion(), 4);
+	dataBuf[4] = 0;
+	sendData(s, dataBuf, 4);
+}
+
+file recvfile(SOCKET &s) {
+	file temp;
+	recvData(s, dataBuf, 100);
+	temp.setfileId(dataBuf);
+	recvData(s, dataBuf, MAX_BUFF);
+	temp.setcontent(dataBuf);
+	recvData(s, dataBuf, 4);
+	temp.setversion(*(int*)dataBuf);
+	return temp;
+}
+
+
+void print() {
+	cout << setw(10) << "FileId"<<setw(15)<<"content"<<setw(10)<<"version"<<endl;
+	for (auto &k : filefolder) {
+		cout << setw(10) << k.second.getfileId() << setw(15) << k.second.getcontent() << setw(10) << k.second.getversion() << endl;
+	}
 }

@@ -4,6 +4,7 @@ void main() {
 	InitMember();
 	if (!InitSocket())
 		return;
+
 	if (ConnectServer())
 		cout << "connection established!" << endl;
 	else {
@@ -11,6 +12,8 @@ void main() {
 		//return;
 	}
 	sendUserid();
+	InitStdinThread();
+	getinfo();
 	system("pause");
 	ExitClient();
 }

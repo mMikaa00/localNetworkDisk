@@ -1,16 +1,15 @@
 #include "server.h"
 
 userManager sUsers;
-char sDataBuff[MAX_BUFF];
 HANDLE sAcceptThread;
 CRITICAL_SECTION cs;
 SOCKET sServer;
 bool sConfig;
+char dataBuf[MAX_BUFF];
 
 void InitMember() {
 	{
 		InitializeCriticalSection(&cs);                         //初始化临界区  
-		memset(sDataBuff, 0, MAX_BUFF);
 		sAcceptThread = NULL;                                   //设置为NULL  
 		sServer = INVALID_SOCKET;                               //设置为无效的套接字  
 		sConfig = false;
@@ -105,39 +104,90 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 {
 	SOCKET accept = *(SOCKET*)pParam;
 
-	cout << "createThread succeed"  << endl;
-	pair<string,string> curuser;
-	if(!getuserInfo(accept,curuser))				//获取用户信息
+	cout << "createThread succeed" << endl;
+	pair<string, string> curuser;
+	if (!getuserInfo(accept, curuser)) {				//获取用户信息
+		exitThread((SOCKET*)pParam);
 		return 0;
+	}
 	EnterCriticalSection(&cs);
-	if (!sUsers.finduser(curuser)) {					//检查数据库中是否已存在该用户，若不存在则添加该用户
-		if (sUsers.adduser(curuser))
-			cout << "add new user to database" << endl;
+	if (!sUsers.finduser(curuser)) {					//检查数据库中是否已存在该用户，若不存在则添加该用户(待封装）
+		if (!sUsers.adduser(curuser))
+		{
+			cout << "add user failed!" << endl;
+			LeaveCriticalSection(&cs);
+			exitThread((SOCKET*)pParam);
+			return 0;
+		}
 		else
-			cout << "add failed!" << endl;
+			cout << "add new user to database" << endl;
+	}
+	
+
+	
+	
+	if (sUsers.getgroup(curuser.second)->finduser(curuser.first) != -1)				//检查该用户是否已连接
+	{
+		cout << "other user had connected using this id..." << endl;
+		LeaveCriticalSection(&cs);
+		exitThread((SOCKET*)pParam);
+		return 0;
 	}
 
-	if (sUsers.getgroup(curuser.second)->finduser(curuser.first)!=-1)				//检查该用户是否已连接
-	{	
-		cout << "other user had connected using this id..." << endl;
-	}
-	else {
-		sUsers.getgroup(curuser.second)->setsocket(curuser.first, accept);			//将group中该user配对值设为socket值，标识该用户已连接
-		
-	}
+	cout << "client " << curuser.first << ' ' << curuser.second <<" connected!" << endl;
+
+	group* curgroup = sUsers.getgroup(curuser.second);							//将group中该user配对值设为socket值，标识该用户已连接，并获取group中的两个事件，关键段和文件引用
+	curgroup->setsocket(curuser.first, accept);
+	HANDLE &event1 = curgroup->getevent1();
+	HANDLE &event2 = curgroup->getevent2();
+	CRITICAL_SECTION &groupcs = curgroup->getcs();
+	unordered_map<string,file> &filefolder = curgroup->getfile();
+	int &read_num = curgroup->getrdn();
 
 	LeaveCriticalSection(&cs);
-	cout << curuser.first << ' ' << curuser.second << endl;
+	
+	char recvbuf[MAX_BUFF];
+	while (1) {
+		if(!recvData(accept, recvbuf))
+			break;
+		if (!strcmp(recvbuf, "SYN")) {								//实现同步与提交两种操作的响应，同步响应只读取数据，提交响应会修改数据，同步相应开始时，可以允许其他线程读取数据但不允许修改操作
+			WaitForSingleObject(event1, INFINITE);					//
+			ResetEvent(event2);
+			EnterCriticalSection(&groupcs);
+			++read_num;
+			LeaveCriticalSection(&groupcs);
+			synchronizeData(accept, curuser,filefolder);
+			EnterCriticalSection(&groupcs);
+			if (--read_num==0)
+				SetEvent(event2);
+			LeaveCriticalSection(&groupcs);	
+		}
+		else if (!strcmp(recvbuf, "CMT")) {
+			ResetEvent(event1);									//一旦提交相应开始进行时，将数据进行锁定，不允许其他线程修改或读取
+			WaitForSingleObject(event2, INFINITE);
+			ResetEvent(event2);
+			commitData(accept,curuser,filefolder);
+			for (auto &k : curgroup->getusers()) {				//提交成功后通知该组其他已连接用户同步数据
+				if (k.second==-1||k.first == curuser.first)
+					continue;
+				sendData(k.second, "SYN");
+			}
+			SetEvent(event1);
+			SetEvent(event2);
+		}
+	}
+	
 
 	cout << "client " << curuser.first << " disconnected!" << endl;
-	
-	sUsers.getgroup(curuser.second)->setsocket(curuser.first, -1);
-	closesocket(accept);
-	delete pParam;
+	curgroup->setsocket(curuser.first, -1);
+
+	exitThread((SOCKET*)pParam);
 	return 0;//线程退出  
 }
 
-bool getuserInfo(SOCKET s,pair<string,string> &user) {
+
+bool getuserInfo(SOCKET &s,pair<string,string> &user)			//获取用户信息
+{
 	char userId[MAX_BUFF];
 	char groupId[MAX_BUFF];
 	if(!recvData(s, userId))
@@ -150,73 +200,117 @@ bool getuserInfo(SOCKET s,pair<string,string> &user) {
 }
 
 /**
-* @Des:send data to client
+* 结束线程
 */
-bool sendData(SOCKET s, char* str)
-{
-	int retVal;//返回值  
-	int nlength = strlen(str);
-	while (1)
-	{
-		retVal = send(s, str, nlength, 0);//一次发送  
-										  //错误处理  
-		if (SOCKET_ERROR == retVal)
-		{
-			int nErrCode = WSAGetLastError();//错误代码  
-			if (WSAEWOULDBLOCK == nErrCode)
-			{
-				continue;
-			}
-			else if (WSAENETDOWN == nErrCode || WSAETIMEDOUT == nErrCode || WSAECONNRESET == nErrCode)
-			{
-				return FALSE;
-			}
-		}
-		nlength -= retVal;
-		str += retVal;
-
-		if (nlength == 0)
-			break;
-	}
-
-	return TRUE;        //发送成功  
+void exitThread(SOCKET* s) {
+	closesocket(*s);
+	delete s;
 }
 
 /**
-*  读取数据
+* 同步数据
 */
-bool recvData(SOCKET s, char* buf)
-{
-	BOOL retVal = TRUE;
-	bool bLineEnd = FALSE;      //行结束  
-	memset(buf, 0, MAX_BUFF);        //清空接收缓冲区  
-	int  nReadLen = 0;          //读入字节数  
 
-	while (!bLineEnd)
-	{
-		nReadLen = recv(s, buf, MAX_BUFF, 0);
-		if (SOCKET_ERROR == nReadLen)
-		{
-			int nErrCode = WSAGetLastError();
-			if (WSAEWOULDBLOCK == nErrCode)   //接受数据缓冲区不可用  
-			{
-				continue;                       //继续循环  
-			}
-			else if (WSAENETDOWN == nErrCode || WSAETIMEDOUT == nErrCode || WSAECONNRESET == nErrCode) //客户端关闭了连接  
-			{
-				retVal = FALSE; //读数据失败  
-				break;                          //线程退出  
-			}
-		}
+void synchronizeData(SOCKET &s,pair<string,string> &user, unordered_map<string,file> &filefolder) {
+	cout << user.first << " is synchronizing!" << endl;
+	for (auto &k : filefolder) 										//发送本端所有文件校验信息给远端
+		sendcheckcode(s, k.second);
+	sendcheckcode(s, file("end", ""));
 
-		if (0 == nReadLen)           //未读取到数据  
-		{
-			retVal = FALSE;
+	while (1) {														//回应远端文件请求
+		
+		recvData(s, dataBuf,100);
+		if (strcmp(dataBuf, "end"))
+			sendfile(s, filefolder[dataBuf]);
+		else
 			break;
-		}
-		buf[nReadLen] = 0;
-		bLineEnd = TRUE;
+	}								
+
+	//file test("liuwenbo", "woshiyigehaha");
+	cout << user.first << " complete synchronizing!" << endl;
+}
+
+/**
+* 处理客户端提交数据请求
+*/
+
+void commitData(SOCKET &s, pair<string, string> &user, unordered_map<string,file> &filefolder) {
+	cout << user.first << " is commiting!" << endl;
+
+	unordered_map<string, int> checkcode;						//接受远端校验信息存入字典
+	while (1){
+		auto temp=recvcheckcode(s);
+		if (temp.first != "end")
+			checkcode.insert(temp);
+		else
+			break;
 	}
 
-	return retVal;
+	for (auto i=filefolder.begin();i!=filefolder.end();) {			//根据check字典检查本地数据是否需要删除或更新，将需要更新的file校验信息发送给远端
+		auto curcode = checkcode.find(i->first);
+		if (curcode == checkcode.end())
+			i = filefolder.erase(i);
+		else if (i->second.getversion() == curcode->second) {
+			checkcode.erase(curcode);
+			++i;
+		}
+	}
+
+	for (auto &k : checkcode) {									//根据字典中剩余的文件名向远端申请文件数据
+		char neededfile[100];
+		strcpy(neededfile, k.first.c_str());
+		sendData(s,neededfile,100);
+		file temp=recvfile(s);
+		filefolder[temp.getfileId()] = temp;
+	}
+	
+	sendData(s, "end",100);
+	cout << user.first << " complete commiting!" << endl;
+}
+
+/**
+* 发送验证码
+*/
+void sendcheckcode(SOCKET &s, file &f) {
+	strcpy(dataBuf, f.getfileId().c_str());
+	sendData(s, dataBuf, 100);
+	memcpy(dataBuf, &f.getversion(), 4);
+	dataBuf[4] = 0;
+	sendData(s, dataBuf, 4);
+}
+/**
+* 接受验证码
+*/
+pair<string, int> recvcheckcode(SOCKET &s) {
+	pair<string, int> ret;
+	recvData(s, dataBuf, 100);
+	ret.first = dataBuf;
+	recvData(s, dataBuf, 4);
+	ret.second = (*(int*)dataBuf);
+	return ret;
+}
+/**
+* 发送文件
+*/
+void sendfile(SOCKET &s, file &f) {
+	strcpy(dataBuf, f.getfileId().c_str());
+	sendData(s, dataBuf, 100);
+	strcpy(dataBuf, f.getcontent().c_str());
+	sendData(s, dataBuf, MAX_BUFF);
+	memcpy(dataBuf, &f.getversion(), 4);
+	dataBuf[4] = 0;
+	sendData(s, dataBuf, 4);
+}
+/**
+* 接受文件
+*/
+file recvfile(SOCKET &s) {
+	file temp;
+	recvData(s, dataBuf, 100);
+	temp.setfileId(dataBuf);
+	recvData(s, dataBuf, MAX_BUFF);
+	temp.setcontent(dataBuf);
+	recvData(s, dataBuf, 4);
+	temp.setversion(*(int*)dataBuf);
+	return temp;
 }

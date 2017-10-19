@@ -1,23 +1,34 @@
 #pragma once
 #pragma comment (lib,"ws2_32.lib") 
 #include <WinSock2.h>
+#include "TCP.h"
+#include "file.h"
 #include <string>
-#include <unordered_set>
 #include <iostream>
-#include "groupManager.h"
+#include <iomanip>
+#include <unordered_map>
 using namespace std;
 
 #define MAX_BUFF 1024
 
 
 void InitMember(void);
-BOOL  InitSocket(void);
+BOOL InitSocket(void);
 BOOL ConnectServer(void);
-void recvAndSend(void);
-bool RecvLine(SOCKET s, char* buf);
-bool recvData(SOCKET s, char* buf);
-bool sendData(SOCKET s, char* str);
+bool InitStdinThread();
+DWORD WINAPI ThreadFunc(LPVOID lpParam);
 void ExitClient(void);
 void ShowConnectMsg(BOOL bSuc);
 
 bool sendUserid();
+void getinfo();
+
+void synchronizeData();
+void commitData();
+
+void sendcheckcode(SOCKET &s, file &f);
+void sendfile(SOCKET &s, file &f);
+pair<string, int> recvcheckcode(SOCKET &s);
+file recvfile(SOCKET &s);
+
+void print();

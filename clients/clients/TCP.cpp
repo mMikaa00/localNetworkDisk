@@ -1,6 +1,6 @@
 #include "TCP.h"
 
-bool sendData(SOCKET &s, char* str, int n)
+bool sendData(SOCKET s, char* str, int n)
 {
 	int retVal;//返回值  
 	int nlength;
@@ -37,15 +37,20 @@ bool sendData(SOCKET &s, char* str, int n)
 /**
 *  读取数据
 */
-int recvData(SOCKET &s, char* buf)
+int recvData(SOCKET s, char* buf,int n)
 {
 	int retVal = 0;
 	bool bLineEnd = FALSE;      //行结束   
 	int  nReadLen = 0;          //读入字节数  
+	int readlength;
+	if (n == 0)
+		readlength = MAX_BUFF;
+	else
+		readlength = n;
 
-	while (!bLineEnd)
+	while (1)
 	{
-		nReadLen = recv(s, buf, MAX_BUFF, 0);
+		nReadLen = recv(s, buf, readlength, 0);
 		if (SOCKET_ERROR == nReadLen)
 		{
 			int nErrCode = WSAGetLastError();
@@ -65,10 +70,23 @@ int recvData(SOCKET &s, char* buf)
 			retVal = 0;
 			break;
 		}
-		retVal = nReadLen;
-		buf[nReadLen] = 0;
-		bLineEnd = TRUE;
+		
+		if (n == 0) {
+			retVal = nReadLen;
+			buf[nReadLen] = 0;
+			break;
+		}
+		else
+		{
+			readlength -= nReadLen;
+			if (readlength == 0) {
+				buf[nReadLen] = 0;
+				retVal = n;
+				break;
+			}
+			buf += nReadLen;
+		}
 	}
-
 	return retVal;
 }
+
