@@ -146,7 +146,7 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 	char recvbuf[100];
 	while (1) {
 		memset(recvbuf, 0, 100);
-		if(!recvData(accept, recvbuf))
+		if(!recvData(accept, recvbuf,4))
 			break;
 		if (!strcmp(recvbuf, "SYN")) {								//实现同步与提交两种操作的响应，同步响应只读取数据，提交响应会修改数据，同步相应开始时，可以允许其他线程读取数据但不允许修改操作
 			EnterCriticalSection(&groupcs);

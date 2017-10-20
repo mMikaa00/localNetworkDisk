@@ -69,7 +69,7 @@ BOOL ConnectServer(void)
 						//输入要连接的主机地址  
 	serAddr.sin_family = AF_INET;
 	serAddr.sin_port = htons(8888);
-	serAddr.sin_addr.S_un.S_addr = inet_addr("192.168.206.56");//"172.18.103.161");
+	serAddr.sin_addr.S_un.S_addr = inet_addr("172.18.103.161");
 
 	while (true)
 	{
@@ -135,7 +135,7 @@ bool InitStdinThread() {
 	sockaddr_in stdserv;
 	stdserv.sin_family = AF_INET;
 	stdserv.sin_port = htons(*port);
-	stdserv.sin_addr.s_addr = inet_addr("192.168.206.56");//"172.18.103.161");
+	stdserv.sin_addr.s_addr = inet_addr("172.18.103.161");
 
 	connect(sStdinfd, (SOCKADDR*)&stdserv, sizeof(stdserv));
 	CloseHandle(hSemaphore);
@@ -149,7 +149,7 @@ DWORD WINAPI ThreadFunc(LPVOID lpParam)
 	sockaddr_in servaddr;
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_port = htons(*port);
-	servaddr.sin_addr.s_addr = inet_addr("192.168.206.56");//"172.18.103.161");
+	servaddr.sin_addr.s_addr = inet_addr("172.18.103.161");
 
 	bind(listenfd, (SOCKADDR*)&servaddr, sizeof(servaddr));
 	listen(listenfd, 5);
@@ -213,7 +213,7 @@ bool sendUserid()
 * 与服务端和用户交互接口
 */
 void getinfo() {
-	sendData(sClient, "SYN");
+	sendData(sClient, "SYN",4);
 	synchronizeData();
 	int maxfd;
 	fd_set rfd;
@@ -230,11 +230,11 @@ void getinfo() {
 			recvData(sStdinfd, input);
 
 			if (!strcmp(input, "SYN")) {
-				sendData(sClient, "SYN");
+				sendData(sClient, "SYN",4);
 				synchronizeData();
 			}
 			else if (!strcmp(input, "CMT")) {
-				sendData(sClient, "CMT");
+				sendData(sClient, "CMT",4);
 				commitData();
 			}
 			else if (!strcmp(input, "print")) {
@@ -244,7 +244,7 @@ void getinfo() {
 				char temp[50];
 				recvData(sStdinfd, temp);
 				filefolder.emplace(temp, file(temp, "adsfkjasdflk"));
-				sendData(sClient, "CMT");
+				sendData(sClient, "CMT",4);
 				commitData();
 				synchronizeData();
 			}
@@ -254,7 +254,7 @@ void getinfo() {
 				auto g = filefolder.find(temp);
 				if (g != filefolder.end()) {
 					g->second.setversion(16);
-					sendData(sClient, "CMT");
+					sendData(sClient, "CMT",4);
 					Sleep(5000);			//模拟延缓提交
 					commitData();
 					synchronizeData();
@@ -265,7 +265,7 @@ void getinfo() {
 		if (FD_ISSET(sClient, &rfd)) {
 			recvData(sClient, dataBuf);
 			if (!strcmp(dataBuf, "SYN")) {
-				sendData(sClient, dataBuf);
+				sendData(sClient, dataBuf,4);
 				synchronizeData();
 			}
 		}
