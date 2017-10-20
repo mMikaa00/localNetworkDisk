@@ -11,9 +11,13 @@ void main() {
 		cout << "connection failed!" << endl;
 		//return;
 	}
-	sendUserid();
-	InitStdinThread();
-	getinfo();
+	if (checkUserid()) {
+		InitStdinThread();
+		getinfo();
+		
+	}
+	else
+		cout << "check userid failed!";
 	system("pause");
 	ExitClient();
 }

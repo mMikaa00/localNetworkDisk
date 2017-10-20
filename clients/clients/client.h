@@ -14,13 +14,14 @@ using namespace std;
 
 void InitMember(void);
 BOOL InitSocket(void);
+string GetLocalIP();
 BOOL ConnectServer(void);
 bool InitStdinThread();
 DWORD WINAPI ThreadFunc(LPVOID lpParam);
 void ExitClient(void);
 void ShowConnectMsg(BOOL bSuc);
 
-bool sendUserid();
+bool checkUserid();
 void getinfo();
 
 void synchronizeData();

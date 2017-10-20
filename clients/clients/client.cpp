@@ -59,6 +59,28 @@ BOOL  InitSocket(void)
 	return TRUE;
 }
 
+// 获得本机的IP地址  
+string GetLocalIP()
+{
+	// 获得本机主机名  
+	char hostname[100] = { 0 };
+	gethostname(hostname, 100);
+	struct hostent FAR* lpHostEnt = gethostbyname(hostname);
+	if (lpHostEnt == NULL)
+	{
+		return "172.18.103.161";
+	}
+
+	// 取得IP地址列表中的第一个为返回的IP(因为一台主机可能会绑定多个IP)  
+	LPSTR lpAddr = lpHostEnt->h_addr_list[0];
+
+	// 将IP地址转化成字符串形式  
+	struct in_addr inAddr;
+	memmove(&inAddr, lpAddr, 4);
+
+	return inet_ntoa(inAddr);
+}
+
 /**
 * 连接服务器
 */
@@ -197,15 +219,18 @@ void ShowConnectMsg(BOOL bSuc)
 * 发送用户信息
 */
 
-bool sendUserid()
+bool checkUserid()
 {
 	cout << "please input your userid and groupid:" << endl;
-	char input[100];
-	cin >> input;
-	if (!sendData(sClient, input))
+	char buf[100];
+	cin >> buf;
+	if (!sendData(sClient, buf,100))
 		return false;
-	cin >> input;
-	if (!sendData(sClient, input))
+	cin >> buf;
+	if (!sendData(sClient, buf,100))
+		return false;
+	recvData(sClient, buf);
+	if (strcmp(buf, "FALSE"))
 		return false;
 	return true;
 }

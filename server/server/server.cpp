@@ -110,6 +110,7 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 		exitThread((SOCKET*)pParam);
 		return 0;
 	}
+
 	EnterCriticalSection(&cs);
 	if (!sUsers.finduser(curuser)) {					//检查数据库中是否已存在该用户，若不存在则添加该用户
 		if (!sUsers.adduser(curuser))
@@ -126,11 +127,12 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 	if (sUsers.getgroup(curuser.second)->finduser(curuser.first) != -1)				//检查该用户是否已连接
 	{
 		cout << "other user had connected using this id..." << endl;
+		sendData(accept, "FALSE");
 		LeaveCriticalSection(&cs);
 		exitThread((SOCKET*)pParam);
 		return 0;
 	}
-
+	sendData(accept, "TRUE");
 	cout << "client " << curuser.first << ' ' << curuser.second <<" connected!" << endl;
 
 	group* curgroup = sUsers.getgroup(curuser.second);							//将group中该user配对值设为socket值，标识该用户已连接，并获取group中的两个事件，关键段和文件引用
@@ -205,11 +207,11 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 
 bool getuserInfo(SOCKET &s,pair<string,string> &user)			//获取用户信息
 {
-	char userId[MAX_BUFF];
-	char groupId[MAX_BUFF];
-	if(!recvData(s, userId))
+	char userId[100];
+	char groupId[100];
+	if(!recvData(s, userId,100))
 		return false;
-	if(!recvData(s, groupId))
+	if(!recvData(s, groupId,100))
 		return false;
 	user.first = userId;
 	user.second = groupId;
