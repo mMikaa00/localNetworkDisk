@@ -1,29 +1,16 @@
 #include "client.h"  
 
 
-//变量  
-SOCKET  sClient,sStdinfd;                            //套接字    
-BOOL    bConnecting;                        //与服务器的连接状态 
-pair<string, string> curuser;
-unordered_map<string, file> fileFolder;	//存储本地文件空间
-HANDLE hMapFile;
-HANDLE hThread;
-int *port;
-
 /**
 初始化全局变量
 */
-void InitMember(void)
-{
-	//  InitializeCriticalSection(&cs);  
+client::client()
+{ 
 	
 	sClient = INVALID_SOCKET;   //套接字  
 	sStdinfd = INVALID_SOCKET;
 	hThread = INVALID_HANDLE_VALUE;
-	bConnecting = FALSE;        //为连接状态  
-
 	
-
 	hMapFile = CreateFileMapping(
 		INVALID_HANDLE_VALUE,    // 物理文件句柄  
 		NULL,                    // 默认安全级别  
@@ -40,14 +27,22 @@ void InitMember(void)
 		0,
 		64
 	);
-
 	
+	char dir[100];
+	GetCurrentDirectory(100, dir);
+	path = dir;
+	path += "\\";
+	cout << path<<endl;
 }
+client::~client() {
+	CloseHandle(hMapFile);
+}
+
 
 /**
 * 创建套接字
 */
-BOOL  InitSocket(void)
+BOOL  client::InitSocket(void)
 {
 	int         reVal;  //返回值  
 	WSADATA     wsData; //WSADATA变量  
@@ -63,7 +58,7 @@ BOOL  InitSocket(void)
 }
 
 // 获得本机的IP地址  
-string GetLocalIP()
+string client::GetLocalIP()
 {
 	// 获得本机主机名  
 	char hostname[100] = { 0 };
@@ -87,7 +82,7 @@ string GetLocalIP()
 /**
 * 连接服务器
 */
-BOOL ConnectServer(void)
+BOOL client::ConnectServer(void)
 {
 	int reVal;          //返回值  
 	sockaddr_in serAddr;//服务器地址  
@@ -130,8 +125,8 @@ BOOL ConnectServer(void)
 /**
 * 初始化输入线程并连接
 */
-bool InitStdinThread() {
-	if (hThread != INVALID_HANDLE_VALUE)
+bool client::InitStdinThread() {
+	if (hThread != INVALID_HANDLE_VALUE)			//当线程已经被创建后不再重复创建，用于断网重连时客户端的reset
 		return false;
 	if (*port >= 8900 || *port <= 8888)
 		*port = 8889;
@@ -140,7 +135,8 @@ bool InitStdinThread() {
 	cout << "port=" << *port << endl;//tttttttttttttt
 	DWORD dwWaitResult;
 	HANDLE hSemaphore = CreateSemaphore(NULL, 0, 1,"liuwenbo" );
-	hThread = CreateThread(NULL, 0, ThreadFunc, NULL, 0, NULL);
+	hThread = CreateThread(NULL, 0, ThreadFunc, this, 0, NULL);
+	
 	if (hThread == NULL)
 	{
 		cout << "CreateThread failed." << endl;
@@ -154,7 +150,7 @@ bool InitStdinThread() {
 		break;
 	default:
 		cout<<"wait the stdin-sock thread failed!"<<endl;
-		return -1;
+		return false;
 	}
 
 	sockaddr_in stdserv;
@@ -164,17 +160,19 @@ bool InitStdinThread() {
 
 	connect(sStdinfd, (SOCKADDR*)&stdserv, sizeof(stdserv));
 	CloseHandle(hSemaphore);
+	return true;
 }
 
 
 DWORD WINAPI ThreadFunc(LPVOID lpParam)
 {
+	client *cli = (client*)lpParam;
 	char buf[100];
 	SOCKET listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	sockaddr_in servaddr;
 	servaddr.sin_family = AF_INET;
-	servaddr.sin_port = htons(*port);
-	servaddr.sin_addr.s_addr = inet_addr(GetLocalIP().c_str());
+	servaddr.sin_port = htons(*cli->port);
+	servaddr.sin_addr.s_addr = inet_addr(client::GetLocalIP().c_str());
 
 	bind(listenfd, (SOCKADDR*)&servaddr, sizeof(servaddr));
 	listen(listenfd, 5);
@@ -198,24 +196,24 @@ DWORD WINAPI ThreadFunc(LPVOID lpParam)
 /**
 * 客户端退出
 */
-void ExitClient(void)
+void client::ExitClient(void)
 {
 	CloseHandle(hThread);
 	closesocket(sClient);
 	WSACleanup();
 }
 /**
-* 客户端退出
+* 重置SOCKET
 */
-void resetSocket() {
+void client::resetSocket() {
 	closesocket(sClient);
 	sClient = socket(AF_INET, SOCK_STREAM, 0);
 }
 /**
 * 获取用户信息
 */
-void getUserInfo() {
-	if (curuser.first.empty()) {
+void client::getUserInfo() {
+	if (curuser.first.empty()) {		//用户已经输入过
 		cout << "please input your userid and groupid:" << endl;
 		cin >> curuser.first;
 		cin >> curuser.second;
@@ -224,7 +222,7 @@ void getUserInfo() {
 /**
 * 发送用户信息
 */
-bool checkUserid()
+bool client::checkUserid()
 {	
 	char buf[100];
 	strcpy(buf, curuser.first.c_str());
@@ -239,8 +237,9 @@ bool checkUserid()
 /**
 * 与服务端和用户交互接口
 */
-void getinfo() {
-	transmitor ts(sClient,fileFolder,"D:\\test\\client\\");
+void client::getinfo() {
+	initFileFolder((path+"*.*").c_str(), fileFolder);
+	transmitor ts(sClient,fileFolder,path);
 	SynchronizeData(ts);
 	int maxfd;
 	fd_set rfd;
@@ -263,11 +262,6 @@ void getinfo() {
 			else if (!strcmp(buf, "print")) {
 				print();
 			}
-			else if (!strcmp(buf, "add")) {
-				recvData(sStdinfd, buf,100);
-				fileFolder.emplace(buf, file(buf, "adsfkjasdflk"));
-				CommitData(ts);
-			}
 			else if (!strcmp(buf, "edit")) {
 				recvData(sStdinfd, buf,100);
 				auto g = fileFolder.find(buf);
@@ -287,14 +281,14 @@ void getinfo() {
 }
 
 
-void print() {
+void client::print() {
 	cout << setw(20) << "FileId"<<setw(30)<<"path"<<setw(10)<<"version"<<endl;
 	for (auto &k : fileFolder) {
 		cout << setw(20) << k.second.getfileId() << setw(30) << k.second.getpath() << setw(10) << k.second.getversion() << endl;
 	}
 }
 
-void SynchronizeData(transmitor& ts) {
+void client::SynchronizeData(transmitor& ts) {
 	sendData(sClient, "SYN", 4);
 	char buf[10];
 	for (int i = 0; i != 5; ++i) {
@@ -305,7 +299,7 @@ void SynchronizeData(transmitor& ts) {
 		}
 	}
 }
-void CommitData(transmitor& ts) {
+void client::CommitData(transmitor& ts) {
 	sendData(sClient, "CMT", 4);
 	char buf[10];
 	for (int i = 0; i != 5; ++i) {

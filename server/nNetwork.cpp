@@ -78,7 +78,7 @@ void transmitor::synchronizeData() {
 
 	for (auto &k : fileFolder) 										//发送本端所有文件校验信息给远端
 		sendcheckcode(k.second);
-	sendcheckcode(file("end", ""));
+	sendcheckcode(file("end", "",0));
 
 
 	while (1) {														//回应远端文件请求

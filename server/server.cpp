@@ -1,23 +1,21 @@
 #include "server.h"
 
-userManager sUsers;
-HANDLE sAcceptThread;
-HANDLE sAcceptSocket;
-CRITICAL_SECTION cs;
-SOCKET sServer;
-bool sConfig;
-
-void InitMember() {
-	{
-		InitializeCriticalSection(&cs);                         //初始化临界区  
-		sAcceptThread = NULL;                                   //设置为NULL  
-		sServer = INVALID_SOCKET;                               //设置为无效的套接字  
-		sConfig = false;
-		HANDLE hSemaphore = CreateSemaphore(NULL, 0, 1, NULL);
-	}
+server::server():sUsers(path) {
+	
+	InitializeCriticalSection(&cs);                         //初始化临界区  
+	sAcceptThread = NULL;                                   //设置为NULL  
+	sServer = INVALID_SOCKET;                               //设置为无效的套接字  
+	sConfig = false;
+	sAcceptSocket = CreateSemaphore(NULL, 0, 1, NULL);
 }
 
-bool InitSocket(void)
+
+	server::~server() {
+		DeleteCriticalSection(&cs);
+		CloseHandle(sAcceptSocket);
+	}
+
+bool server::InitSocket(void)
 {
 	//返回值  
 	int reVal;
@@ -52,10 +50,9 @@ bool InitSocket(void)
 	return TRUE;
 }
 
-BOOL createAcceptThread(void)
+BOOL server::createAcceptThread(void)
 {
-	sConfig = TRUE;//设置服务器为运行状态  
-	SOCKET  sAccept;                            //接受客户端连接的套接字  
+	sConfig = TRUE;//设置服务器为运行状态   
 	sockaddr_in addrClient;                     //客户端SOCKET地址  
 	//创建释放资源线程  
 	unsigned long ulThreadId;
@@ -90,7 +87,7 @@ BOOL createAcceptThread(void)
 			cout << "IP: " << pClientIP << "\tPort: " << clientPort << endl;
 		}
 
-		sAcceptThread = CreateThread(NULL, 0, AcceptThreadFunc, &sAccept, 0, &ulThreadId);
+		sAcceptThread = CreateThread(NULL, 0, AcceptThreadFunc, this, 0, &ulThreadId);
 		if (NULL == sAcceptThread)
 		{
 			sConfig = FALSE;
@@ -104,15 +101,16 @@ BOOL createAcceptThread(void)
 
 DWORD __stdcall AcceptThreadFunc(void* pParam)
 {
-	SOCKET accept = *(SOCKET*)pParam;
-	ReleaseSemaphore(sAcceptSocket, 1, NULL);
+	server *ser = (server*)pParam;
+	SOCKET accept = ser->sAccept;
+	ReleaseSemaphore(ser->sAcceptSocket, 1, NULL);
 	socketManager sm(accept);
 
 	pair<string, string> curuser;
 	cout << "createThread succeed" << endl;
 	try
 	{
-		getuserInfo(accept, curuser);  				//获取用户信息
+		server::getuserInfo(accept, curuser);  				//获取用户信息
 	}
 	catch (const std::exception& k) {
 		cout << "client terminated early" << endl;
@@ -120,30 +118,30 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 	}
 
 
-	EnterCriticalSection(&cs);
-	if (!sUsers.finduser(curuser)) {					//检查数据库中是否已存在该用户，若不存在则添加该用户
-		if (!sUsers.adduser(curuser))
+	EnterCriticalSection(&ser->cs);
+	if (!ser->sUsers.finduser(curuser)) {					//检查数据库中是否已存在该用户，若不存在则添加该用户
+		if (!ser->sUsers.adduser(curuser))
 		{
 			cout << "add user failed!" << endl;
-			LeaveCriticalSection(&cs);
+			LeaveCriticalSection(&ser->cs);
 			return 0;
 		}
 		else
 			cout << "add new user to database" << endl;
 	}
 
-	if (sUsers.getgroup(curuser.second)->finduser(curuser.first) != -1)				//检查该用户是否已连接
+	if (ser->sUsers.getgroup(curuser.second)->finduser(curuser.first) != -1)				//检查该用户是否已连接
 	{
 		cout << "other user had connected using this id..." << endl;
 		sendData(accept, "FALSE");
-		LeaveCriticalSection(&cs);
+		LeaveCriticalSection(&ser->cs);
 		return 0;
 	}
 	sendData(accept, "TRUE");
-	cout << "client " << curuser.first << ' ' << curuser.second << " connected!" << endl;
+	cout << "client " << curuser.first << ' ' << curuser.second << " connected!" << endl;//用户连接成功
 
-	group* curgroup = sUsers.getgroup(curuser.second);							//将group中该user配对值设为socket值，标识该用户已连接，并获取group中的两个事件，关键段和文件引用
-	LeaveCriticalSection(&cs);
+	group* curgroup = ser->sUsers.getgroup(curuser.second);							//将group中该user配对值设为socket值，标识该用户已连接，并获取group中的两个事件，关键段和文件引用
+	LeaveCriticalSection(&ser->cs);
 
 	CRITICAL_SECTION &groupcs = curgroup->getcs();								//从group中获取需要的资源
 	curgroup->setsocket(curuser.first, accept);
@@ -151,7 +149,8 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 	HANDLE &event2 = curgroup->getevent2();
 	int &read_num = curgroup->getrdn();
 	unordered_map<string, file> &fileFolder = curgroup->getfile();
-	transmitor ts(accept, fileFolder,"D:\\test\\server\\");
+	string curpath = ser->path + curgroup->getgroupId()+"\\";
+	transmitor ts(accept, fileFolder,curpath);
 
 	try {
 		char buf[10];
@@ -209,7 +208,7 @@ DWORD __stdcall AcceptThreadFunc(void* pParam)
 }
 
 
-void getuserInfo(SOCKET &s,pair<string,string> &user)			//获取用户信息
+void server::getuserInfo(SOCKET &s,pair<string,string> &user)			//获取用户信息
 {
 	char userId[100];
 	char groupId[100];

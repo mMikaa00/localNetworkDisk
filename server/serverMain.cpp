@@ -1,8 +1,8 @@
 #include "server.h"
 
 void main() {
-	InitMember();
-	if (!InitSocket())
+	server s;
+	if (!s.InitSocket())
 		return;
-	createAcceptThread();
+	s.createAcceptThread();
 }

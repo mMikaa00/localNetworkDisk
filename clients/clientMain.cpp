@@ -1,14 +1,14 @@
 #include "client.h"
 
 void main() {
-	InitMember();
-	if (!InitSocket())
+	client c;
+	if (!c.InitSocket())
 		return;
 	while (true)
 	{
 		try {
 			while (1) {
-				if (ConnectServer()) {
+				if (c.ConnectServer()) {
 					cout << "connection established!" << endl;
 					break;
 				}
@@ -17,10 +17,10 @@ void main() {
 					Sleep(3000);
 				}
 			}
-			getUserInfo();
-			if (checkUserid()) {
-				InitStdinThread();
-				getinfo();
+			c.getUserInfo();
+			if (c.checkUserid()) {
+				c.InitStdinThread();
+				c.getinfo();
 			}
 			else {
 				cout << "check userid failed!";
@@ -29,9 +29,8 @@ void main() {
 		}
 		catch (const std::exception& k) {
 			cout << "Server failed, try to connect every 3s" << endl;
-			resetSocket();
+			c.resetSocket();
 		}
 	}
 	system("pause");
-	ExitClient();
 }

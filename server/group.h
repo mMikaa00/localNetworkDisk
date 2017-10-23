@@ -1,25 +1,24 @@
 #pragma once
-#include <string>
-#include <unordered_map>
 #include <process.h>
-#include <Windows.h>
-#include "file.h"
+#include "fileManager.h"
+
 using namespace std;
 
 
 class group {
 public:
-	
-	group(string a) :groupId(a),read_num(0) {
+	group(string &a,string &p) :groupId(a),read_num(0) {			//使用固定路径完成file folder初始化
 		InitializeCriticalSection(&cs);
 		event1 = CreateEvent(NULL, TRUE, TRUE, NULL);
 		event2 = CreateEvent(NULL, TRUE, TRUE, NULL);
-		fileFolder.emplace("a.txt",file("a.txt", "D:\\test\\server\\a.txt"));
+		string path = p+ groupId + "\\*.*";
+		initFileFolder(path.c_str(),fileFolder);
 	};
 	~group() {
 		CloseHandle(event1);
 		CloseHandle(event2);
 	}
+	
 	const string& getgroupId() {
 		return groupId;
 	}
@@ -83,6 +82,7 @@ private:
 
 class userManager {
 public:
+	userManager(string &p) :path(p) {};
 	bool adduser(pair<string,string> user) {
 		auto g = gs.find(user.second);
 		if (g != gs.end()) {
@@ -90,7 +90,7 @@ public:
 		}
 		else
 		{
-			auto n=gs.emplace(user.second, new group(user.second));
+			auto n=gs.emplace(user.second, new group(user.second,path));
 			return (n.first->second->adduser(user.first));
 		}
 	}
@@ -123,6 +123,7 @@ public:
 	
 private:
 	unordered_map<string,group*> gs;
+	string &path;			//传入服务器对应文件夹路径
 };
 
 

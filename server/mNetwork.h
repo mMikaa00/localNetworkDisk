@@ -3,7 +3,7 @@
 #include <WinSock2.h>
 #include <unordered_map>
 #include <iostream>
-#include "file.h"
+#include "fileManager.h"
 #define MAX_BUFF 4096
 
 int recvData(SOCKET s, char* buf, int n, bool sign = false);
@@ -47,11 +47,11 @@ public:
 	void sendfile(file &f) {
 		strcpy(dataBuf, f.getfileId().c_str());
 		sendData(s, dataBuf, 100,true);
-
-		sendFileFromPath(f.getpath().c_str());
 		memcpy(dataBuf, &f.getversion(), 4);
-		dataBuf[4] = 0;
-		sendData(s, dataBuf, 4,true);
+		sendData(s, dataBuf, 4, true);
+		memcpy(dataBuf, &f.getsize(), 4);
+		sendData(s, dataBuf, 4, true);
+		sendFileFromPath((path+f.getfileId()).c_str(),f.getsize());	
 	}
 	/**
 	* 接受文件
@@ -60,22 +60,23 @@ public:
 		file temp;
 		recvData(s, dataBuf, 100,true);
 		temp.setfileId(dataBuf);
-
-		temp.setpath(path+dataBuf);
-		recvFiletoPath(temp.getpath().c_str());
-
-		recvData(s, dataBuf, 4,true);
+		recvData(s, dataBuf, 4, true);
 		temp.setversion(*(int*)dataBuf);
+		recvData(s, dataBuf, 4, true);
+		temp.setsize(*(int*)dataBuf);
+
+		temp.setpath(path+temp.getfileId());
+		recvFiletoPath(temp.getpath().c_str(),temp.getsize());
 		return temp;
 	}
 
-	void sendFileFromPath(const char* path) {
+	void sendFileFromPath(const char* path,int size) {
 		FILE *file = NULL;
-		file = fopen(path, "r");
+		file = fopen(path, "rb");
 		if (file == NULL)
 			exit(1);
 		fseek(file, 0, SEEK_SET);
-		while (!feof(file))
+		while (size>0)
 		{
 			int len = fread(dataBuf, 1, MAX_BUFF, file);
 			if (sendData(s,dataBuf,len) < 0)
@@ -83,29 +84,31 @@ public:
 				perror("send file :");
 				break;
 			}
-			if (len < sizeof(dataBuf))
-				break;
+			size -= len;
+			//if (len < MAX_BUFF)
+				//break;
 		}
-		recvData(s, dataBuf, 10);
+		/*recvData(s, dataBuf, 10);
 		if (!strcmp(dataBuf, "end"))
 			fclose(file);
 		else
-			cout << "send file error!" << endl;
+			cout << "send file error!" << endl;*/
 	}
 
-	void recvFiletoPath(const char* path) {
+	void recvFiletoPath(const char* path,int size) {
 		FILE *file = NULL;
-		file = fopen(path, "w");
-		while (1)
+		file = fopen(path, "wb");
+		while (size>0)
 		{
 			int len = recvData(s,dataBuf,MAX_BUFF);
 			if (len <= 0)
 				break;
 			fwrite(dataBuf, 1, len, file);
-			if (len < MAX_BUFF)
-				break;
+			size -= len;
+			//if (len < MAX_BUFF)
+				//break;
 		}
-		sendData(s, "end", 4);
+		//sendData(s, "end", 4);
 		fclose(file);
 	}
 
